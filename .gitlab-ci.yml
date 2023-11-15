@@ -1,0 +1,70 @@
+stages:
+  - build
+  - test
+  - deploy
+
+.base:
+  image:
+    name: nodejs:lts-alpine3.17
+  cache:
+    paths:
+      - apt-cache/
+      - node-modules/
+
+test_job:
+  extends: .base
+  stage: test
+  script: 
+    - npm i
+    - npm run test:unit
+  only:
+    - merge_requests
+  when: manual
+
+build_job:
+  extends: .base
+  stage: build
+  only:
+    - merge_requests
+  script:
+    - npm i
+    - npm run build
+
+.ssh:
+  before_script:
+    - apk add openssh-client
+    - eval $(ssh-agent -s)
+    - echo "$SSH_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan $SERVER_IP >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+
+.develop:
+  extends: .ssh
+  image: alpine
+  variables:
+    $SERVER_IP: 45.77.10.19
+    $SSH_KEY: $SSH_PRIVATE_KEY_paracel
+
+.staging:
+  extends: .ssh
+  image: alpine
+  variables:
+    $SERVER_IP: 45.77.10.33
+    $SSH_KEY: $SSH_PRIVATE_KEY_paracel
+
+deploy_develop:
+  extends: .develop
+  stage: deploy
+  only:
+    - develop
+  script: ssh root@$SERVER_IP "npm i && npm run build"
+
+
+deploy_staging:
+  extends: .staging
+  stage: deploy
+  only:
+    - staging
+  script: ssh root@$SERVER_IP "npm i && npm run build"
